@@ -8,6 +8,9 @@ ENV PYTHONUNBUFFERED 1
 # Set the working directory in the container
 WORKDIR /app
 
+# Install system dependencies including ffmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg
+
 # Install dependencies
 # Copy the requirements file into the container
 COPY requirements.txt .

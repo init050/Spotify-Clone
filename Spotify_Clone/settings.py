@@ -11,6 +11,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 dotenv.load_dotenv(BASE_DIR / '.env')
 
 
+# Custom App Settings
+CATALOG_HLS_VARIANTS = [int(x) for x in os.getenv('CATALOG_HLS_VARIANTS', '64,128,256').split(',')]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
@@ -32,6 +36,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',
 
     # Third-party apps
     'rest_framework',
@@ -40,9 +45,11 @@ INSTALLED_APPS = [
     'corsheaders',
     'phonenumber_field',
     'django_ratelimit',
+    'django_filters',
 
     # Local apps
     'accounts',
+    'artists.apps.ArtistsConfig',
 ]
 
 MIDDLEWARE = [
@@ -149,6 +156,31 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 
+# Storage Settings (for S3-compatible services like MinIO or AWS S3)
+# Using django-storages
+if os.getenv('AWS_STORAGE_BUCKET_NAME'):
+    STORAGES = {
+        'default': {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+        },
+        'staticfiles': {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+        },
+    }
+    AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
+    # For MinIO local development
+    AWS_S3_ENDPOINT_URL = os.getenv('AWS_S3_ENDPOINT_URL', None)
+    AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',
+    }
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_DEFAULT_ACL = None # Default is private
+    AWS_QUERYSTRING_AUTH = True # To generate presigned URLs
+
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
@@ -157,6 +189,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Django REST Framework
 REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
@@ -182,6 +216,9 @@ REST_FRAMEWORK = {
         'login': '5/min',
         'register': '10/hour',
         'password_reset': '5/min',
+        'search': '100/min',
+        'upload': '20/hour',
+        'stream': '500/day',
     }
 }
 
