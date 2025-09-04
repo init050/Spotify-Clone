@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  proxy:
+    build: ./proxy
+    ports:
+      - "8000:80"
+    volumes:
+      - ./frontend/build:/var/www/frontend
+      - staticfiles:/var/www/static
+    depends_on:
+      - web
+
+  web:
+    build: .
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn Spotify_Clone.wsgi:application --bind 0.0.0.0:8000"
+    volumes:
+      - .:/app
+      - staticfiles:/app/staticfiles
+    expose:
+      - 8000
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+      - minio
+
+  minio:
+    image: minio/minio:RELEASE.2023-09-07T02-05-02Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    env_file:
+      - .env
+    environment:
+      - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
+      - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - minio_data:/data
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    env_file:
+      - .env
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      /usr/bin/mc alias set myminio ${AWS_S3_ENDPOINT_URL} ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} --api s3v4 &&
+      /usr/bin/mc mb myminio/${AWS_STORAGE_BUCKET_NAME} --ignore-existing &&
+      /usr/bin/mc policy set public myminio/${AWS_STORAGE_BUCKET_NAME}
+      "
+
+  db:
+    image: postgres:14
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+  redis:
+    image: redis:6-alpine
+
+  worker:
+    build: .
+    command: celery -A Spotify_Clone worker --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - web
+      - redis
+
+  beat:
+    build: .
+    command: celery -A Spotify_Clone beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - web
+      - redis
+
+volumes:
+  postgres_data:
+  minio_data:
+  staticfiles:
